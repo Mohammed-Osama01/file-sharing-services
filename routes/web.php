@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -18,11 +19,27 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::prefix('/files')->name('files.')->group(function(){
-    Route::get('/', [FileController::class, 'index'])->name('index');
-    Route::get('/create', [FileController::class, 'create'])->name('create');
-    Route::post('/', [FileController::class, 'store'])->name('store');
-    Route::delete('/{file}', [FileController::class, 'destroy'])->name('destroy');
-    Route::get('/download/{id}', [FileController::class, 'download'])->name('download');
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+
+    Route::get('/upload', [FileController::class, 'showUploadForm'])->name('upload.form');
+    Route::post('/upload', [FileController::class, 'upload'])->name('upload');
+
+    // File Management Routes
+    Route::get('/files', [FileController::class, 'index'])->name('files');
+    Route::delete('/files/{file}', [FileController::class, 'delete'])->name('files.delete');
+
+    // Download Routes
 });
 
+require __DIR__ . '/auth.php';
+Route::get('/download/{token}', [FileController::class, 'download'])->name('download');
+
+Route::get('/files/{file}/download', [FileController::class, 'generateDownloadLink'])->name('files.download');

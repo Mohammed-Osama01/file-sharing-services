@@ -2,69 +2,117 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\FileDownloaded;
 use App\Models\File;
+use App\Models\User;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Response;
 
 class FileController extends Controller
 {
-
-    public function index(){
-        $files = File::orderByDesc('created_at', 'DESC')->get();
-
-        $success = session('success');
-
-        return view('files.index', compact('files', 'success'));
-    }
-    public function create(){
-
-        return view('files.create');
+    //
+    public function showUploadForm()
+    {
+        return view('files.upload');
     }
 
-
-    public function store(Request $request)
+    public function upload(Request $request)
     {
         $request->validate([
-            'title' => 'required',
-            'description' => 'nullable|max:255',
+            'file' => 'required|file|max:2048',
         ]);
 
+        $user = Auth::user();
 
-        $myFile = new File();
-        $myFile->title = $request->post('title');
-        $myFile->description = $request->post('description');
+        $uploadedFile = $request->file('file');
 
-        if ($request->hasFile('cover_path')) {
-            $file = $request->file('cover_path');
-            $path = $file->store('/covers', 'public');
+        $fileName = uniqid('file_') . '.' . $uploadedFile->getClientOriginalExtension();
 
-            $myFile->cover_path = $path;
-        }
-        $myFile->save();
-        return redirect()->route('files.index')->with('success', 'File Uploaded');
-    }
-    public function destroy(string $id)
-    {
-        $file = File::findOrFail($id);
 
-        if ($file->cover_path) {
-            Storage::delete('/public/covers/' . basename($file->cover_path));
-        }
+        $fileStored = Storage::disk('local')->putFileAs('uploads', $uploadedFile, $fileName);
 
-        $file->delete();
+        if ($fileStored) {
+            $user->files()->create([
+                'name' => $uploadedFile->getClientOriginalName(),
+                'path' => $fileStored,
+            ]);
 
-        return redirect()->route('files.index')->with('success', 'File deleted successfully');
-    }
-
-    public function download($id)
-    {
-        $myFile = File::findOrFail($id);
-        $file_path = 'storage/' . $myFile->cover_path;
-        if ($file_path) {
-            return Response::download($file_path);
+            return redirect()->route('files')
+                ->with('msg', 'File uploaded successfully.')
+                ->with('type', 'success');
         } else {
-            exit('Requested file does not exist on our server!');
+            return redirect()->route('files')
+                ->with('msg', 'File upload failed.')
+                ->with('type', 'danger');
         }
     }
+
+    public function index(Request $request)
+    {
+        $user = Auth::user();
+        $files = $user->files()
+            ->filter($request->query())
+            ->paginate(10);
+
+        $msg = session('msg');
+        $type = session('type');
+
+        return view('files.index', compact('files', 'msg', 'type'));
+    }
+
+    public function generateDownloadLink($file)
+    {
+        $file = Auth::user()->files()->findOrFail($file);
+
+        $downloadLink = route('download', $file->unique_identifier);
+
+        return view('files.download-link', compact('downloadLink'));
+    }
+
+    public function download(Request $request, $token)
+    {
+        $file = File::where('unique_identifier', $token)->firstOrFail();
+        $filePath = $file->path;
+        $fileName = $file->name;
+
+
+        $ipDetails = Http::get('https://api.ipgeolocation.io/ipgeo?apiKey=92d57df724104d3e8959fed5dccb1228')->body();
+
+        $json = json_decode($ipDetails);
+        $country_name = $json->country_name;
+        $country_code2 = $json->country_code2;
+
+
+        $downloadDetails = [
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'country' => "Country name: $country_name, Code: $country_code2",
+            'file_id' => $file->id,
+        ];
+
+        FileDownloaded::dispatch($downloadDetails);
+
+        $file->increment('total_downloads');
+
+        return Storage::disk('local')->download($filePath, $fileName);
+        // return response()->file(storage_path('app/' .$filePath));
+    }
+
+    public function delete($file)
+    {
+        $user = Auth::user();
+        $fileToDelete = $user->files()->findOrFail($file);
+
+        Storage::disk('local')->delete($fileToDelete->path);
+
+        $fileToDelete->delete();
+
+        return redirect()->route('files')
+            ->with('msg', 'File deleted successfully.')
+            ->with('type', 'success');
+    }
+
 }
