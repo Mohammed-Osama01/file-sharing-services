@@ -1,5 +1,5 @@
 @extends('layouts.master')
-@section('title', 'Home')
+@section('title', 'Home | File Sharing')
 @section('content')
 
     <x-alert :msg="$msg" :type="$type" />
