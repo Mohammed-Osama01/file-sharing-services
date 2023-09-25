@@ -13,13 +13,11 @@ return new class extends Migration
     {
         Schema::create('files', function (Blueprint $table) {
             $table->id();
-            $table->string('title');
-            $table->string('description')->nullable();
-            $table->string('cover_path')->nullable();
-            $table->foreignId('user_id')
-                ->nullable()
-                ->constrained('users', 'id')
-                ->nullOnDelete();
+            $table->string('name');
+            $table->string('path');
+            $table->string('unique_identifier')->unique();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->integer('total_downloads')->default(0);
             $table->timestamps();
         });
     }
